@@ -13,87 +13,96 @@ import java.util.*;
 @SpringBootApplication
 @RestController
 @RequestMapping("/api")
-@CrossOrigin(origins = "*") // Cho phép mọi trang web khác gọi đến API này
+@CrossOrigin(origins = "*") // Cho phép gọi API từ mọi nơi (Frontend, Postman...)
 public class VideoApiApplication {
 
     @Autowired
-    private UserRepository userRepository; // Kết nối với "thủ kho" Database
+    private UserRepository userRepository; // Kết nối tới kho dữ liệu Neon
 
     public static void main(String[] args) {
         SpringApplication.run(VideoApiApplication.class, args);
     }
 
-    // --- 1. HÀM ĐĂNG KÝ (Tạo tài khoản mới) ---
+    // --- 1. CHỨC NĂNG ĐĂNG KÝ ---
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody Map<String, String> payload) {
         String user = payload.get("username");
         String pass = payload.get("password");
 
-        // Kiểm tra xem người dùng có nhập thiếu gì không
+        // Kiểm tra đầu vào
         if (user == null || pass == null || user.isEmpty()) {
-            return ResponseEntity.badRequest().body(Map.of("error", "Mày quên nhập tên hoặc mật khẩu rồi!"));
+            return ResponseEntity.badRequest().body(Map.of("error", "Nhập thiếu tên hoặc mật khẩu rồi!"));
         }
 
-        // Kiểm tra xem tên này đã có ai dùng chưa
+        // Kiểm tra xem tên này có trong Database chưa
         if (userRepository.existsByUsername(user)) {
-            return ResponseEntity.status(400).body(Map.of("error", "Tên này có thằng khác dùng rồi mày ơi!"));
+            return ResponseEntity.status(400).body(Map.of("error", "Tên tài khoản này đã có người dùng!"));
         }
 
-        // TẠO NGƯỜI DÙNG MỚI: 
-        // Rank mặc định là "Member" (Không còn là VIP chùa nữa)
-        // Tặng 50 Tokens làm vốn thôi (Cho 500 nhanh phá sản lắm)
+        // Tạo tài khoản mới:
+        // Mặc định Rank = "Member"
+        // Mặc định Tokens = 50
         User newUser = new User(user, pass, "Member", 50);
-        userRepository.save(newUser); // Lệnh lưu xuống Database Neon
+        userRepository.save(newUser); // Lưu vĩnh viễn vào Neon
         
-        return ResponseEntity.ok(Map.of("status", "success", "message", "Đăng ký thành công rồi đó!"));
+        return ResponseEntity.ok(Map.of("status", "success", "message", "Đăng ký thành công!"));
     }
 
-    // --- 2. HÀM ĐĂNG NHẬP (Kiểm tra đúng sai) ---
+    // --- 2. CHỨC NĂNG ĐĂNG NHẬP ---
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody Map<String, String> payload) {
         String user = payload.get("username");
         String pass = payload.get("password");
 
-        // Tìm thằng người dùng trong Database theo cái tên (username)
+        // Tìm người dùng trong Database
         Optional<User> userOpt = userRepository.findByUsername(user);
 
-        // Nếu tìm thấy người dùng VÀ mật khẩu khớp nhau
+        // Nếu tìm thấy và mật khẩu khớp
         if (userOpt.isPresent() && userOpt.get().getPassword().equals(pass)) {
-            User u = userOpt.get(); // Lấy dữ liệu thằng đó ra
+            User u = userOpt.get();
+            
+            // KIỂM TRA RANK ADMIN:
+            // Nếu tên đăng nhập là "admin", tao sẽ ép rank nó thành "ADMIN" để mày có quyền tối cao
+            String finalRank = u.getRank();
+            if (u.getUsername().equalsIgnoreCase("admin")) {
+                finalRank = "ADMIN";
+            }
+
             return ResponseEntity.ok(Map.of(
                 "status", "success", 
-                "rank", u.getRank(),       // Trả về Rank thật (Member hoặc VIP)
+                "rank", finalRank, 
                 "username", u.getUsername(),
-                "tokens", u.getTokens()    // Trả về số Token thật nó đang có
+                "tokens", u.getTokens()
             ));
         }
-        // Nếu sai thì đuổi nó ra
-        return ResponseEntity.status(401).body(Map.of("error", "Sai tên hoặc mật khẩu, nhìn kỹ lại đi!"));
+        
+        // Nếu sai mật khẩu hoặc không thấy user
+        return ResponseEntity.status(401).body(Map.of("error", "Sai tài khoản hoặc mật khẩu!"));
     }
 
-    // --- 3. HÀM KIỂM TRA SERVER ---
+    // --- 3. KIỂM TRA SERVER ---
     @GetMapping("/status")
     public String status() {
-        return "Server & Database Neon đang chạy ngon lành cành đào!";
+        return "Server & Database Neon đang hoạt động cực tốt!";
     }
 }
 
-// --- PHẦN ĐỊNH NGHĨA CẤU TRÚC BẢNG DỮ LIỆU (DATABASE MODEL) ---
+// --- CẤU TRÚC BẢNG DỮ LIỆU TRONG NEON (USER ENTITY) ---
 
-@Entity // Đánh dấu đây là một bảng trong Database
-@Table(name = "users") // Tên bảng là "users"
+@Entity
+@Table(name = "users")
 class User {
     @Id
-    @GeneratedValue(strategy = GenerationType.IDENTITY) // Tự động tăng ID (1, 2, 3...)
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
     private Long id;
 
-    @Column(unique = true) // Tên tài khoản không được trùng nhau
+    @Column(unique = true)
     private String username;
     private String password;
-    private String rank; // Cột lưu Rank (Member/VIP)
-    private int tokens;  // Cột lưu số tiền (Token)
+    private String rank;  // Member, VIP, hoặc ADMIN
+    private int tokens;   // Số tiền/lượt dùng của user
 
-    // Hàm khởi tạo (Constructor) - Giúp tạo User nhanh hơn
+    // Hàm tạo (Constructor)
     public User() {}
     public User(String username, String password, String rank, int tokens) {
         this.username = username;
@@ -102,22 +111,19 @@ class User {
         this.tokens = tokens;
     }
 
-    // Mấy cái Getters này để Java lấy dữ liệu ra dùng
+    // Getters & Setters (Để Java đọc và ghi dữ liệu)
     public Long getId() { return id; }
     public String getUsername() { return username; }
     public String getPassword() { return password; }
     public String getRank() { return rank; }
-    public int getTokens() { return tokens; }
-    
-    // Mấy cái Setters này để thay đổi dữ liệu (ví dụ khi nạp Token hoặc lên VIP)
     public void setRank(String rank) { this.rank = rank; }
+    public int getTokens() { return tokens; }
     public void setTokens(int tokens) { this.tokens = tokens; }
 }
 
-// --- THỦ KHO (REPOSITORY) ---
-// Đây là nơi thực hiện các lệnh: Tìm, Lưu, Xóa, Sửa trong Database
+// --- GIAO DIỆN THỦ KHO (REPOSITORY) ---
 @Repository
 interface UserRepository extends JpaRepository<User, Long> {
-    Optional<User> findByUsername(String username); // Tìm user theo tên
-    boolean existsByUsername(String username);      // Kiểm tra xem tên đã tồn tại chưa
+    Optional<User> findByUsername(String username);
+    boolean existsByUsername(String username);
 }
