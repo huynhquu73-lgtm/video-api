@@ -1,12 +1,24 @@
+# Bước 1: Build ứng dụng
 FROM maven:3.8.5-openjdk-17 AS build
 WORKDIR /app
+
+# Copy file cấu hình dự án
 COPY pom.xml .
-# Tự động tạo thư mục chuẩn cho Java Spring Boot
+
+# Tạo cấu trúc thư mục chuẩn (Cực kỳ quan trọng để Java tìm thấy file)
 RUN mkdir -p src/main/java/com/video/backend
-# Copy file Java vào đúng thư mục vừa tạo
+RUN mkdir -p src/main/resources
+
+# Copy code Java vào đúng chỗ
 COPY VideoApiApplication.java src/main/java/com/video/backend/
+
+# Copy file mật khẩu Database vào đúng chỗ để Java đọc được
+COPY application.properties src/main/resources/
+
+# Bắt đầu đóng gói (Package)
 RUN mvn clean package -DskipTests
 
+# Bước 2: Chạy ứng dụng
 FROM openjdk:17.0.1-jdk-slim
 WORKDIR /app
 COPY --from=build /app/target/*.jar app.jar
