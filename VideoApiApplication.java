@@ -4,8 +4,11 @@ import org.springframework.boot.SpringApplication;
 import org.springframework.boot.autoconfigure.SpringBootApplication;
 import org.springframework.web.bind.annotation.*;
 import org.springframework.http.ResponseEntity;
-import java.util.Map;
-import java.util.HashMap;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.data.jpa.repository.JpaRepository;
+import org.springframework.stereotype.Repository;
+import jakarta.persistence.*;
+import java.util.*;
 
 @SpringBootApplication
 @RestController
@@ -13,16 +16,14 @@ import java.util.HashMap;
 @CrossOrigin(origins = "*")
 public class VideoApiApplication {
 
-    // Tạo một cái "túi" để chứa tài khoản tạm thời (vì chưa có Database)
-    private static Map<String, String> users = new HashMap<>();
+    @Autowired
+    private UserRepository userRepository;
 
     public static void main(String[] args) {
-        // Cho sẵn tài khoản admin vào túi
-        users.put("admin", "123");
         SpringApplication.run(VideoApiApplication.class, args);
     }
 
-    // 1. HÀM ĐĂNG KÝ (Mày đang thiếu cái này nè!)
+    // 1. HÀM ĐĂNG KÝ (Lưu thẳng vào Database Neon)
     @PostMapping("/register")
     public ResponseEntity<?> register(@RequestBody Map<String, String> payload) {
         String user = payload.get("username");
@@ -32,22 +33,33 @@ public class VideoApiApplication {
             return ResponseEntity.badRequest().body(Map.of("error", "Thiếu thông tin!"));
         }
 
-        if (users.containsKey(user)) {
+        if (userRepository.existsByUsername(user)) {
             return ResponseEntity.status(400).body(Map.of("error", "Tài khoản đã tồn tại!"));
         }
 
-        users.put(user, pass); // Lưu vào túi
+        // Tạo user mới, tặng ngay 500 Token làm vốn
+        User newUser = new User(user, pass, 500);
+        userRepository.save(newUser);
+        
         return ResponseEntity.ok(Map.of("status", "success", "message", "Đăng ký thành công!"));
     }
 
-    // 2. HÀM ĐĂNG NHẬP (Giờ nó sẽ kiểm tra trong túi users)
+    // 2. HÀM ĐĂNG NHẬP (Kiểm tra dữ liệu từ Database)
     @PostMapping("/login")
     public ResponseEntity<?> login(@RequestBody Map<String, String> payload) {
         String user = payload.get("username");
         String pass = payload.get("password");
 
-        if (users.containsKey(user) && users.get(user).equals(pass)) {
-            return ResponseEntity.ok(Map.of("status", "success", "rank", "VIP", "username", user));
+        Optional<User> userOpt = userRepository.findByUsername(user);
+
+        if (userOpt.isPresent() && userOpt.get().getPassword().equals(pass)) {
+            User u = userOpt.get();
+            return ResponseEntity.ok(Map.of(
+                "status", "success", 
+                "rank", "VIP", 
+                "username", u.getUsername(),
+                "tokens", u.getTokens()
+            ));
         }
         return ResponseEntity.status(401).body(Map.of("error", "Sai tài khoản hoặc mật khẩu!"));
     }
@@ -55,6 +67,41 @@ public class VideoApiApplication {
     // 3. HÀM KIỂM TRA TRẠNG THÁI
     @GetMapping("/status")
     public String status() {
-        return "Server OK!";
+        return "Server & Database Neon đang hoạt động!";
     }
+}
+
+// --- PHẦN ĐỊNH NGHĨA DỮ LIỆU (DATABASE MODEL) ---
+
+@Entity
+@Table(name = "users")
+class User {
+    @Id
+    @GeneratedValue(strategy = GenerationType.IDENTITY)
+    private Long id;
+
+    @Column(unique = true)
+    private String username;
+    private String password;
+    private int tokens;
+
+    public User() {}
+    public User(String username, String password, int tokens) {
+        this.username = username;
+        this.password = password;
+        this.tokens = tokens;
+    }
+
+    // Getters & Setters
+    public Long getId() { return id; }
+    public String getUsername() { return username; }
+    public String getPassword() { return password; }
+    public int getTokens() { return tokens; }
+    public void setTokens(int tokens) { this.tokens = tokens; }
+}
+
+@Repository
+interface UserRepository extends JpaRepository<User, Long> {
+    Optional<User> findByUsername(String username);
+    boolean existsByUsername(String username);
 }
